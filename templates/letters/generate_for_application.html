@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Generate Letter</title>
+  <style>
+    body { font-family: sans-serif; max-width: 640px; margin: 40px auto; padding: 0 20px; }
+    h2 { margin-bottom: 4px; }
+    .card { background:#f8f9fa;border:1px solid #ddd;padding:16px;border-radius:8px;margin:16px 0; }
+    .meta { font-size:13px;color:#555; line-height:1.6; }
+    .meta strong { color:#222; }
+    select, button { padding:8px 12px;font-size:14px;border-radius:6px;border:1px solid #ccc; }
+    button { background:#0d6efd;color:#fff;border:none;cursor:pointer;margin-left:6px; }
+    button:hover { background:#0b5ed7; }
+    .warn { color:#b02a37; }
+    .ok { color:#198754; }
+  </style>
+</head>
+<body>
+
+<h2>📄 Generate Letter</h2>
+
+<p class="meta">
+  <strong>Application:</strong> {{ application.application_no }}<br>
+  <strong>Applicant:</strong> {{ application.applicant_name }}<br>
+  <strong>Service:</strong> {{ application.service.name }}<br>
+  <strong>Status:</strong> {{ application.get_status_display }}
+</p>
+
+<div class="card">
+  {% if templates %}
+    <form method="post">
+      {% csrf_token %}
+      <label for="template_id"><strong>Choose letter template:</strong></label><br><br>
+      <select name="template_id" id="template_id" required>
+        <option value="">— Select —</option>
+        {% for t in templates %}
+          <option value="{{ t.pk }}">{{ t.name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">Generate PDF</button>
+    </form>
+  {% else %}
+    <p class="warn">
+      ⚠️ No active letter templates found for this institution and service.
+    </p>
+    <p class="meta">
+      Go to <strong>Letters → Letter templates</strong> and add one,
+      making sure:
+      <br>• Institution matches this service's institution
+      <br>• Service is set to <em>{{ application.service.name }}</em> (or left blank)
+      <br>• Active is ✅
+    </p>
+  {% endif %}
+</div>
+
+</body>
+</html>

@@ -1,0 +1,278 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Letter Pad Editor — {{ letter_pad.name }}</title>
+  <style>
+    body { font-family: sans-serif; margin: 0; background: #f4f4f4; }
+    .toolbar {
+      background: #222; color: #fff; padding: 10px 20px;
+      display: flex; gap: 15px; align-items: center;
+    }
+    .toolbar button {
+      padding: 6px 14px; border: none; border-radius: 4px;
+      background: #0d6efd; color: #fff; cursor: pointer;
+    }
+    .toolbar button:hover { background: #0b5ed7; }
+    .toolbar .status { margin-left: auto; font-size: 13px; opacity: .8; }
+
+    .canvas-wrap {
+      position: relative;
+      margin: 20px auto;
+      display: inline-block;
+      background: #fff;
+      box-shadow: 0 0 12px rgba(0,0,0,.2);
+      user-select: none;
+    }
+    .canvas-wrap img {
+      display: block;
+      max-width: 800px;
+      height: auto;
+      pointer-events: none;
+    }
+    .field-box {
+      position: absolute;
+      border: 2px dashed #0d6efd;
+      background: rgba(13, 110, 253, 0.08);
+      cursor: move;
+      font-size: 11px;
+      color: #0d6efd;
+      padding: 2px 4px;
+      box-sizing: border-box;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .field-box.selected {
+      border-color: #dc3545;
+      background: rgba(220, 53, 69, 0.12);
+      color: #dc3545;
+      z-index: 10;
+    }
+    .field-label {
+      position: absolute;
+      top: -18px;
+      left: 0;
+      font-size: 10px;
+      background: #0d6efd;
+      color: #fff;
+      padding: 1px 5px;
+      border-radius: 3px;
+      white-space: nowrap;
+    }
+    .field-box.selected .field-label { background: #dc3545; }
+  </style>
+</head>
+{% if error %}
+  <div style="background:#f8d7da;color:#721c24;padding:12px;margin:12px;border-radius:6px;">
+    ⚠️ {{ error }}
+  </div>
+{% endif %}
+<body>
+
+<div class="toolbar">
+  <strong>{{ letter_pad.name }}</strong>
+  <select id="field-picker">
+    <option value="">+ Add field…</option>
+    {% for value, label in field_choices %}
+      <option value="{{ value }}">{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button id="save-btn">💾 Save Positions</button>
+    <a id="preview-btn"
+   href="{% url 'letters:preview_pdf' letter_pad.pk %}"
+   target="_blank"
+   style="padding:6px 14px;border-radius:4px;background:#198754;color:#fff;text-decoration:none;">
+   👁 Preview Final PDF
+    </a>
+  <button id="clear-btn">🗑 Clear All</button>
+  <span class="status" id="status">Ready</span>
+</div>
+
+<div style="text-align:center;">
+  <div class="canvas-wrap" id="canvas">
+    {% if letter_pad.preview_image %}
+    <img id="pad-img"
+         src="{{ letter_pad.preview_image.url }}"
+         alt="Letter Pad Preview">
+    {% else %}
+       <div style="padding:40px;color:#888;">
+    No preview available. Upload or re-save the PDF in admin to generate it.
+        </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+const pageWidth  = {{ page_width }};
+const pageHeight = {{ page_height }};
+const positions  = {{ positions_json|safe }};
+const fieldLabels = {
+  {% for value, label in field_choices %}
+  "{{ value }}": "{{ label|escapejs }}",
+  {% endfor %}
+};
+
+const img = document.getElementById("pad-img");
+const canvas = document.getElementById("canvas");
+const statusEl = document.getElementById("status");
+
+// Compute scale: displayed pixels per PDF point
+let scaleX = 1, scaleY = 1;
+
+function updateScale() {
+  scaleX = img.clientWidth  / pageWidth;
+  scaleY = img.clientHeight / pageHeight;
+}
+
+// PDF (points, origin bottom-left) → screen px (origin top-left)
+function pdfToScreen(x, y) {
+  return {
+    left: x * scaleX,
+    top:  (pageHeight - y) * scaleY,
+  };
+}
+// Screen px (top-left) → PDF (bottom-left, points)
+function screenToPdf(leftPx, topPx) {
+  return {
+    x: leftPx / scaleX,
+    y: pageHeight - (topPx / scaleY),
+  };
+}
+
+function makeDraggable(el) {
+  let startX, startY, startLeft, startTop;
+
+  el.addEventListener("mousedown", (e) => {
+    if (e.target.classList.contains("field-label")) return;
+    e.preventDefault();
+    document.querySelectorAll(".field-box").forEach(b => b.classList.remove("selected"));
+    el.classList.add("selected");
+
+    startX = e.clientX;
+    startY = e.clientY;
+    startLeft = parseFloat(el.style.left) || 0;
+    startTop  = parseFloat(el.style.top)  || 0;
+
+    function onMove(ev) {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      el.style.left = (startLeft + dx) + "px";
+      el.style.top  = (startTop  + dy) + "px";
+      statusEl.textContent = "Moved — unsaved changes";
+    }
+    function onUp() {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      syncField(el);
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  });
+}
+
+function syncField(el) {
+  const left = parseFloat(el.style.left);
+  const top  = parseFloat(el.style.top);
+  const pdf = screenToPdf(left, top);
+  el.dataset.x = pdf.x;
+  el.dataset.y = pdf.y;
+}
+
+function createFieldBox(fieldName, pos) {
+  if (document.querySelector(`.field-box[data-field="${fieldName}"]`)) {
+    return; // already present
+  }
+  const box = document.createElement("div");
+  box.className = "field-box";
+  box.dataset.field = fieldName;
+  box.dataset.x = pos.x;
+  box.dataset.y = pos.y;
+
+  const screen = pdfToScreen(pos.x, pos.y);
+  box.style.left = screen.left + "px";
+  box.style.top  = screen.top  + "px";
+  box.style.width  = (pos.width  || 200) * scaleX + "px";
+  box.style.height = (pos.height || 20)  * scaleY + "px";
+  box.style.fontSize = (pos.font_size || 12) * scaleY + "px";
+
+  box.innerHTML = `<span class="field-label">${fieldLabels[fieldName] || fieldName}</span>`;
+  canvas.appendChild(box);
+  makeDraggable(box);
+  return box;
+}
+
+function renderAll() {
+  canvas.querySelectorAll(".field-box").forEach(b => b.remove());
+  Object.entries(positions).forEach(([name, pos]) => createFieldBox(name, pos));
+}
+
+img.addEventListener("load", () => {
+  updateScale();
+  renderAll();
+});
+
+window.addEventListener("resize", () => {
+  updateScale();
+  renderAll();
+});
+
+// Add field from dropdown
+document.getElementById("field-picker").addEventListener("change", (e) => {
+  const name = e.target.value;
+  if (!name) return;
+  if (positions[name]) {
+    alert("That field already exists. Drag it to reposition.");
+    e.target.value = "";
+    return;
+  }
+  positions[name] = { x: 50, y: pageHeight - 100, width: 250, height: 20, font_size: 12, alignment: "left" };
+  createFieldBox(name, positions[name]);
+  e.target.value = "";
+  statusEl.textContent = "Field added — unsaved changes";
+});
+
+// Save
+document.getElementById("save-btn").addEventListener("click", async () => {
+  const payload = {};
+  document.querySelectorAll(".field-box").forEach(el => {
+    syncField(el);
+    payload[el.dataset.field] = {
+      x: parseFloat(el.dataset.x),
+      y: parseFloat(el.dataset.y),
+      width: parseFloat(el.style.width) / scaleX,
+      height: parseFloat(el.style.height) / scaleY,
+      font_size: parseInt(el.style.fontSize) / scaleY || 12,
+      alignment: "left",
+    };
+  });
+
+  const res = await fetch("{% url 'letters:save_positions' letter_pad.pk %}", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-CSRFToken": getCookie("csrftoken") },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (data.ok) {
+    statusEl.textContent = "✅ Saved";
+  } else {
+    statusEl.textContent = "❌ Save failed";
+  }
+});
+
+// Clear
+document.getElementById("clear-btn").addEventListener("click", () => {
+  if (!confirm("Remove all field boxes (unsaved)?")) return;
+  canvas.querySelectorAll(".field-box").forEach(b => b.remove());
+  statusEl.textContent = "Cleared — click Save to persist";
+});
+
+// CSRF cookie helper
+function getCookie(name) {
+  const v = document.cookie.match("(^|;)\\s*" + name + "\\s*=\\s*([^;]+)");
+  return v ? v.pop() : "";
+}
+</script>
+
+</body>
+</html>

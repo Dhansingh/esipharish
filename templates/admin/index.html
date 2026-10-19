@@ -1,0 +1,24 @@
+{% extends "admin/index.html" %}
+
+{% block content %}
+  {% if quick_actions %}
+    <div style="background:#fff;border:1px solid #ddd;border-radius:10px;
+                padding:20px;margin-bottom:24px;">
+      <h2 style="margin:0 0 16px;font-size:16px;">⚡ Quick Actions</h2>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;">
+        {% for a in quick_actions %}
+          <a href="{{ a.url }}" target="_blank"
+             style="display:block;padding:16px;border:1.5px solid #cbd5e1;
+                    border-radius:8px;text-decoration:none;color:#0f172a;
+                    background:#f8fafc;">
+            <div style="font-weight:600;font-size:15px;margin-bottom:6px;">
+              {{ a.title }}
+            </div>
+            <div style="font-size:13px;color:#64748b;">{{ a.desc }}</div>
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

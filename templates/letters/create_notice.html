@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Create Notice</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, "Segoe UI", "Noto Sans Devanagari", sans-serif;
+      margin: 0;
+      background: #f1f5f9;
+      color: #0f172a;
+    }
+
+    .topbar {
+      background: #1e293b;
+      color: #fff;
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .topbar h1 { margin: 0; font-size: 18px; font-weight: 600; }
+    .topbar a {
+      color: #93c5fd;
+      text-decoration: none;
+      font-size: 13px;
+      margin-left: auto;
+    }
+    .topbar a:hover { color: #bfdbfe; }
+
+    .container {
+      max-width: 1000px;
+      margin: 28px auto 60px;
+      padding: 0 24px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.06);
+      padding: 32px 36px;
+    }
+
+    .template-row {
+      margin-bottom: 28px;
+    }
+    .template-row label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #475569;
+      display: block;
+      margin-bottom: 6px;
+    }
+    .template-row select {
+      width: 100%;
+      padding: 12px 14px;
+      font-size: 15px;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 8px;
+      background: #f8fafc;
+      font-family: inherit;
+    }
+    .template-row select:focus {
+      outline: none;
+      border-color: #3b82f6;
+      background: #fff;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    .form-grid .full { grid-column: 1 / -1; }
+
+    .field label {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: #334155;
+      display: block;
+      margin-bottom: 6px;
+    }
+    .field input[type=text],
+    .field textarea {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 8px;
+      font-size: 15px;
+      font-family: inherit;
+      background: #f8fafc;
+      transition: border-color .15s, background .15s;
+    }
+    .field input[type=text]:focus,
+    .field textarea:focus {
+      outline: none;
+      border-color: #3b82f6;
+      background: #fff;
+    }
+
+    /* Body = big multi-line textarea */
+    .field textarea {
+      resize: vertical;
+      min-height: 500px;
+      line-height: 1.7;
+      font-size: 15px;
+      padding: 16px 18px;
+    }
+
+    .actions {
+      margin-top: 32px;
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      border-top: 1px solid #e2e8f0;
+      padding-top: 24px;
+    }
+    .btn {
+      padding: 12px 26px;
+      border-radius: 8px;
+      border: none;
+      font-size: 15px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .btn-preview {
+      background: #e0e7ff;
+      color: #1e40af;
+    }
+    .btn-preview:hover { background: #c7d2fe; }
+
+    .btn-print {
+      background: #2563eb;
+      color: #fff;
+    }
+    .btn-print:hover { background: #1d4ed8; }
+
+    .hint {
+      color: #94a3b8;
+      font-size: 14px;
+      text-align: center;
+      padding: 60px 20px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>📄 Create Notice</h1>
+  <a href="/admin/letters/generatedletter/">📑 Letter History →</a>
+</div>
+
+<div class="container">
+  <form method="post" id="letter-form">
+    {% csrf_token %}
+    <input type="hidden" name="action" id="action-input" value="load">
+
+    <div class="card">
+
+      <!-- Template picker -->
+      <div class="template-row">
+        <label for="template_id">Template</label>
+        <select name="template_id" id="template_id"
+                onchange="document.getElementById('action-input').value='load'; this.form.submit();">
+          <option value="">— Select a template —</option>
+          {% for t in templates %}
+            <option value="{{ t.pk }}"
+              {% if selected_template and selected_template.pk == t.pk %}selected{% endif %}>
+              {{ t.institution.short_name|default:t.institution.name }} — {{ t.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      {% if editable_fields %}
+
+        <div class="form-grid">
+          {% for f in editable_fields %}
+
+            {% if f.key == "body" %}
+              <!-- Body occupies the full width, big height -->
+              <div class="field full">
+                <label for="field_{{ f.key }}">{{ f.label }}</label>
+                <textarea id="field_{{ f.key }}"
+                          name="field_{{ f.key }}"
+                          placeholder="{{ f.label }} लेख्नुहोस्...">{{ f.default }}</textarea>
+              </div>
+
+            {% elif f.key == "recipient" or f.key == "subject" or f.key == "signature" %}
+              <!-- Medium fields — full width too for comfort -->
+              <div class="field full">
+                <label for="field_{{ f.key }}">{{ f.label }}</label>
+                <input type="text"
+                       id="field_{{ f.key }}"
+                       name="field_{{ f.key }}"
+                       value="{{ f.default }}"
+                       placeholder="{{ f.label }}">
+              </div>
+
+            {% else %}
+              <!-- Short fields (reference_no, dispatch_no, date) — 2 per row -->
+              <div class="field">
+                <label for="field_{{ f.key }}">{{ f.label }}</label>
+                <input type="text"
+                       id="field_{{ f.key }}"
+                       name="field_{{ f.key }}"
+                       value="{{ f.default }}"
+                       placeholder="{{ f.label }}">
+              </div>
+            {% endif %}
+
+          {% endfor %}
+        </div>
+
+        <div class="actions">
+          <button type="submit"
+                  class="btn btn-preview"
+                  onclick="document.getElementById('action-input').value='preview';"
+                  formtarget="_blank">
+            👁 Preview
+          </button>
+          <button type="submit"
+                  class="btn btn-print"
+                  onclick="document.getElementById('action-input').value='print';"
+                  formtarget="_blank">
+            🖨 Print &amp; Save PDF
+          </button>
+        </div>
+
+      {% else %}
+        <p class="hint">Template छान्नुहोस् — fields देखिनेछन्।</p>
+      {% endif %}
+
+    </div>
+  </form>
+</div>
+
+<script>
+  // Auto-resize body textarea as user types (optional smooth feel)
+  document.querySelectorAll("textarea").forEach(ta => {
+    ta.addEventListener("input", () => {
+      // Optional: keep at least min-height
+    });
+  });
+
+  // Ctrl+Enter → Preview
+  document.addEventListener("keydown", (e) => {
+    if (e.ctrlKey && e.key === "Enter") {
+      document.getElementById("action-input").value = "preview";
+      document.getElementById("letter-form").submit();
+    }
+  });
+</script>
+
+</body>
+</html>
